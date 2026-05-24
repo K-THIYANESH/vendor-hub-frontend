@@ -5,6 +5,9 @@ import { useToastStore } from '../../store/toastStore';
 import { useCartStore } from '../../store/cartStore';
 import api from '../../services/api';
 
+const razorpayMode = (import.meta.env.VITE_RAZORPAY_MODE || 'simulation').toLowerCase();
+const isSimulationMode = razorpayMode === 'simulation';
+
 export const RazorpayPayment = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -17,7 +20,6 @@ export const RazorpayPayment = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [tempOrderId, setTempOrderId] = useState('');
 
-  // Pre-create pending order in backend database first
   useEffect(() => {
     const createPendingOrder = async () => {
       try {
@@ -31,27 +33,37 @@ export const RazorpayPayment = () => {
         navigate('/cart');
       }
     };
+
     if (address) {
       createPendingOrder();
     }
-  }, [address]);
+  }, [address, addToast, navigate]);
 
   const handlePaymentSuccess = async () => {
-    if (!tempOrderId) return;
+    if (!tempOrderId) {
+      addToast('Payment is not ready yet. Please wait and try again.', 'warning');
+      return;
+    }
+
     setIsLoading(true);
+
     try {
-      // 1. Create a Razorpay order record on the backend
       let razorOrderId = 'order_mock_' + Math.random().toString(36).substring(2, 9);
+
       try {
         const orderRes = await api.post('/api/orders/create-razorpay-order', {
           amount: parseFloat(amount),
         });
         razorOrderId = orderRes.data.razorpayOrderId;
       } catch (err) {
-        // Silently bypass if Razorpay sandbox credentials are unset in backend
+        if (!isSimulationMode) {
+          addToast('Razorpay order creation failed. Live payment is not available right now.', 'error');
+          return;
+        }
+
+        addToast('Razorpay backend order creation is unavailable, using simulation fallback.', 'info');
       }
 
-      // 2. Submit payment verification parameters
       try {
         await api.post('/api/orders/verify-payment', {
           orderId: tempOrderId,
@@ -60,15 +72,16 @@ export const RazorpayPayment = () => {
           razorpay_signature: 'sig_mock_' + Math.random().toString(36).substring(2, 20),
         });
       } catch (verificationErr) {
-        // Fallback: If verification fails due to signature validation, optimistic update payment status on the client
-        addToast('Gateway Simulation: Bypassed signature verification for demonstration.', 'info');
+        if (!isSimulationMode) {
+          addToast('Payment verification failed. Please try again later.', 'error');
+          return;
+        }
+
+        addToast('Gateway simulation bypassed signature verification for demonstration.', 'info');
       }
 
       addToast('Secure digital payment completed!', 'success');
-      
-      // Flush shopping cart state
       await clearCart();
-
       navigate(`/order-success?id=${tempOrderId}`);
     } catch (err) {
       addToast('Payment processing failed.', 'error');
@@ -84,9 +97,7 @@ export const RazorpayPayment = () => {
 
   return (
     <div className="max-w-md mx-auto space-y-6 animate-fadeIn">
-      {/* Razorpay Sandbox Header Banner */}
       <div className="bg-white border border-slate-200 rounded-3xl p-6 relative overflow-hidden shadow-sm">
-        {/* Glow decoration */}
         <div className="absolute -top-1/4 -right-1/4 w-32 h-32 rounded-full bg-blue-500/10 blur-2xl" />
 
         <div className="flex items-center justify-between mb-8">
@@ -104,19 +115,19 @@ export const RazorpayPayment = () => {
         </div>
       </div>
 
-      {/* Simulator Actions */}
       <div className="card-premium-gradient p-6 rounded-3xl shadow-sm space-y-6">
         <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 p-4 rounded-2xl">
           <HelpCircle className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
           <div>
             <h4 className="text-xs font-bold text-blue-700 mb-1">Razorpay Sandbox Simulator</h4>
             <p className="text-[10px] text-blue-600 leading-normal">
-              This panel simulates the secure Razorpay payment lifecycle. Complete mock transaction validation checks.
+              {isSimulationMode
+                ? 'Simulation mode is enabled. This demo does not process a real Razorpay payment.'
+                : 'Live mode is enabled. The backend must provide a valid Razorpay order and verification response.'}
             </p>
           </div>
         </div>
 
-        {/* Inputs info */}
         <div className="space-y-4">
           <div className="space-y-1">
             <label className="text-[10px] font-bold uppercase text-slate-550">Cardholder Name</label>
@@ -132,13 +143,12 @@ export const RazorpayPayment = () => {
             <input
               type="text"
               disabled
-              value="••••  ••••  ••••  4321"
+              value="•••• •••• •••• 4321"
               className="w-full border border-slate-200 rounded-xl px-4 py-2.5 bg-slate-50 text-xs text-slate-655"
             />
           </div>
         </div>
 
-        {/* Simulator controls */}
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-4">
             <Loader className="w-8 h-8 text-blue-600 animate-spin mb-2" />
@@ -152,7 +162,7 @@ export const RazorpayPayment = () => {
               className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-100 disabled:text-slate-400 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-md transition-colors cursor-pointer"
             >
               <ShieldCheck className="w-4 h-4" />
-              Complete Mock Payment
+              {isSimulationMode ? 'Complete Mock Payment' : 'Complete Razorpay Payment'}
             </button>
             <button
               onClick={handlePaymentDecline}
@@ -166,4 +176,5 @@ export const RazorpayPayment = () => {
     </div>
   );
 };
+
 export default RazorpayPayment;
