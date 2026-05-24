@@ -30,7 +30,7 @@ export const Checkout = () => {
     }
 
     if (paymentMethod === 'RAZORPAY') {
-      navigate(`/razorpay-payment?amount=${total}&address=${encodeURIComponent(address)}`);
+      navigate(`/payment?amount=${total}&address=${encodeURIComponent(address)}`);
       return;
     }
 

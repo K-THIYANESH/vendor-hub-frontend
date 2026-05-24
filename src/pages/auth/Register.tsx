@@ -74,7 +74,7 @@ export const Register = () => {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="John Doe"
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-250 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-sm transition-all bg-white text-slate-850 placeholder-slate-400"
+              className="register-input w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-250 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-sm transition-all bg-white text-slate-850 placeholder-slate-400"
             />
             <User className="absolute left-3.5 top-3 w-4.5 h-4.5 text-slate-400" />
           </div>
@@ -89,7 +89,7 @@ export const Register = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@domain.com"
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-250 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-sm transition-all bg-white text-slate-850 placeholder-slate-400"
+              className="register-input w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-250 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-sm transition-all bg-white text-slate-850 placeholder-slate-400"
             />
             <Mail className="absolute left-3.5 top-3 w-4.5 h-4.5 text-slate-400" />
           </div>
@@ -104,7 +104,7 @@ export const Register = () => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-250 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-sm transition-all bg-white text-slate-850 placeholder-slate-400"
+              className="register-input w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-250 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-sm transition-all bg-white text-slate-850 placeholder-slate-400"
             />
             <Lock className="absolute left-3.5 top-3 w-4.5 h-4.5 text-slate-400" />
           </div>

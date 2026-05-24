@@ -65,6 +65,7 @@ function App() {
           <Route path="/cart" element={<Cart />} />
           <Route path="/checkout" element={<Checkout />} />
           <Route path="/payment" element={<RazorpayPayment />} />
+          <Route path="/razorpay-payment" element={<RazorpayPayment />} />
           <Route path="/order-success" element={<OrderSuccess />} />
           <Route path="/orders" element={<Orders />} />
           <Route path="/orders/track/:id" element={<OrderTracking />} />
