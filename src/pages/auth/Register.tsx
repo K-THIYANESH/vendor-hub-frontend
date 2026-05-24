@@ -41,8 +41,13 @@ export const Register = () => {
 
       addToast('Registration successful! Please sign in.', 'success');
       navigate(`/login?role=${role}`);
-    } catch (err) {
-      // Handled by interceptor
+    } catch (err: any) {
+      addToast(
+        err.response?.data?.error ||
+          err.response?.data?.message ||
+          'Unable to register right now. Please try again.',
+        'error'
+      );
     } finally {
       setIsLoading(false);
     }

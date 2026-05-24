@@ -1,12 +1,45 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { CreditCard, Loader, ShieldCheck, HelpCircle } from 'lucide-react';
 import { useToastStore } from '../../store/toastStore';
 import { useCartStore } from '../../store/cartStore';
 import api from '../../services/api';
 
-const razorpayMode = (import.meta.env.VITE_RAZORPAY_MODE || 'simulation').toLowerCase();
+declare global {
+  interface Window {
+    Razorpay?: new (options: Record<string, unknown>) => {
+      open: () => void;
+    };
+  }
+}
+
+const razorpayKeyId = import.meta.env.VITE_RAZORPAY_KEY_ID || '';
+const razorpayMode = (import.meta.env.VITE_RAZORPAY_MODE || 'live').toLowerCase();
 const isSimulationMode = razorpayMode === 'simulation';
+const isTestKey = razorpayKeyId.startsWith('rzp_test_');
+
+const loadRazorpayScript = () =>
+  new Promise<void>((resolve, reject) => {
+    if (window.Razorpay) {
+      resolve();
+      return;
+    }
+
+    const existingScript = document.getElementById('razorpay-checkout-script');
+    if (existingScript) {
+      existingScript.addEventListener('load', () => resolve());
+      existingScript.addEventListener('error', () => reject(new Error('Unable to load Razorpay Checkout.')));
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.id = 'razorpay-checkout-script';
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Unable to load Razorpay Checkout.'));
+    document.body.appendChild(script);
+  });
 
 export const RazorpayPayment = () => {
   const [searchParams] = useSearchParams();
@@ -18,73 +51,94 @@ export const RazorpayPayment = () => {
   const address = searchParams.get('address') || '';
 
   const [isLoading, setIsLoading] = useState(false);
-  const [tempOrderId, setTempOrderId] = useState('');
 
-  useEffect(() => {
-    const createPendingOrder = async () => {
-      try {
-        const response = await api.post('/api/orders/create', {
-          address,
-          paymentMethod: 'RAZORPAY',
-        });
-        setTempOrderId(response.data.orderId);
-      } catch (err) {
-        addToast('Failed to initialize pending payment order.', 'error');
-        navigate('/cart');
-      }
-    };
-
-    if (address) {
-      createPendingOrder();
+  const handlePayment = async () => {
+    if (!address.trim()) {
+      addToast('Delivery address is missing. Please return to checkout.', 'warning');
+      navigate('/checkout');
+      return;
     }
-  }, [address, addToast, navigate]);
 
-  const handlePaymentSuccess = async () => {
-    if (!tempOrderId) {
-      addToast('Payment is not ready yet. Please wait and try again.', 'warning');
+    if (isSimulationMode) {
+      addToast('Simulation mode is enabled. Real Razorpay checkout is disabled.', 'warning');
+      navigate('/cart');
+      return;
+    }
+
+    if (!razorpayKeyId) {
+      addToast('Razorpay key ID is not configured. Please set VITE_RAZORPAY_KEY_ID.', 'error');
       return;
     }
 
     setIsLoading(true);
 
     try {
-      let razorOrderId = 'order_mock_' + Math.random().toString(36).substring(2, 9);
+      const response = await api.post('/api/orders/create-razorpay-order', {
+        address,
+      });
 
-      try {
-        const orderRes = await api.post('/api/orders/create-razorpay-order', {
-          amount: parseFloat(amount),
-        });
-        razorOrderId = orderRes.data.razorpayOrderId;
-      } catch (err) {
-        if (!isSimulationMode) {
-          addToast('Razorpay order creation failed. Live payment is not available right now.', 'error');
-          return;
-        }
+      const { orderId, razorpayOrderId, amount: razorpayAmount, currency } = response.data;
 
-        addToast('Razorpay backend order creation is unavailable, using simulation fallback.', 'info');
+      await loadRazorpayScript();
+
+      const Razorpay = window.Razorpay;
+
+      if (!Razorpay) {
+        throw new Error('Razorpay SDK is unavailable.');
       }
 
-      try {
-        await api.post('/api/orders/verify-payment', {
-          orderId: tempOrderId,
-          razorpay_order_id: razorOrderId,
-          razorpay_payment_id: 'pay_mock_' + Math.random().toString(36).substring(2, 9),
-          razorpay_signature: 'sig_mock_' + Math.random().toString(36).substring(2, 20),
-        });
-      } catch (verificationErr) {
-        if (!isSimulationMode) {
-          addToast('Payment verification failed. Please try again later.', 'error');
-          return;
-        }
+      const razorpay = new Razorpay({
+        key: razorpayKeyId,
+        amount: Number(razorpayAmount),
+        currency,
+        name: 'VendorHub',
+        description: `Razorpay payment for order ${orderId}`,
+        order_id: razorpayOrderId,
+        prefill: {
+          name: 'Buyer',
+          email: 'buyer@vendorhub.local',
+        },
+        theme: {
+          color: '#4F46E5',
+        },
+        handler: async (paymentResponse: Record<string, string>) => {
+          try {
+            await api.post('/api/orders/verify-payment', {
+              orderId,
+              razorpay_order_id: paymentResponse.razorpay_order_id,
+              razorpay_payment_id: paymentResponse.razorpay_payment_id,
+              razorpay_signature: paymentResponse.razorpay_signature,
+            });
 
-        addToast('Gateway simulation bypassed signature verification for demonstration.', 'info');
-      }
+            addToast('Payment successful! Your order is confirmed.', 'success');
+            await clearCart();
+            navigate(`/order-success?id=${orderId}`);
+          } catch (verifyError: any) {
+            addToast(
+              verifyError.response?.data?.error ||
+                verifyError.response?.data?.message ||
+                'Payment verification failed. Please contact support.',
+              'error'
+            );
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            addToast('Payment was cancelled.', 'warning');
+            navigate('/cart');
+          },
+        },
+      });
 
-      addToast('Secure digital payment completed!', 'success');
-      await clearCart();
-      navigate(`/order-success?id=${tempOrderId}`);
-    } catch (err) {
-      addToast('Payment processing failed.', 'error');
+      razorpay.open();
+    } catch (error: any) {
+      addToast(
+        error.response?.data?.error ||
+          error.response?.data?.message ||
+          error.message ||
+          'Unable to start Razorpay payment. Please try again.',
+        'error'
+      );
     } finally {
       setIsLoading(false);
     }
@@ -94,6 +148,8 @@ export const RazorpayPayment = () => {
     addToast('Payment transaction cancelled by customer.', 'warning');
     navigate('/cart');
   };
+
+  const modeLabel = isSimulationMode ? 'Simulation' : isTestKey ? 'Test Mode' : 'Live Mode';
 
   return (
     <div className="max-w-md mx-auto space-y-6 animate-fadeIn">
@@ -105,7 +161,7 @@ export const RazorpayPayment = () => {
             <CreditCard className="w-3 h-3" /> SECURE GATEWAY
           </span>
           <span className="font-display font-black text-sm tracking-tight text-slate-800">
-            Razorpay <span className="text-blue-650">Sandbox</span>
+            Razorpay <span className="text-blue-650">{modeLabel}</span>
           </span>
         </div>
 
@@ -119,50 +175,28 @@ export const RazorpayPayment = () => {
         <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 p-4 rounded-2xl">
           <HelpCircle className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
           <div>
-            <h4 className="text-xs font-bold text-blue-700 mb-1">Razorpay Sandbox Simulator</h4>
+            <h4 className="text-xs font-bold text-blue-700 mb-1">Razorpay Checkout</h4>
             <p className="text-[10px] text-blue-600 leading-normal">
               {isSimulationMode
-                ? 'Simulation mode is enabled. This demo does not process a real Razorpay payment.'
-                : 'Live mode is enabled. The backend must provide a valid Razorpay order and verification response.'}
+                ? 'Simulation mode is currently enabled. To use real payments, set VITE_RAZORPAY_MODE=live and provide a valid Razorpay key.'
+                : 'Your checkout is now connected to the Razorpay payment flow through the backend order verification endpoints.'}
             </p>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold uppercase text-slate-550">Cardholder Name</label>
-            <input
-              type="text"
-              disabled
-              value="John Doe (Mock Buyer)"
-              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 bg-slate-50 text-xs text-slate-655"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold uppercase text-slate-555">Mock Card Number</label>
-            <input
-              type="text"
-              disabled
-              value="•••• •••• •••• 4321"
-              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 bg-slate-50 text-xs text-slate-655"
-            />
           </div>
         </div>
 
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-4">
             <Loader className="w-8 h-8 text-blue-600 animate-spin mb-2" />
-            <p className="text-xs font-bold text-slate-500 animate-pulse">Securing transaction check...</p>
+            <p className="text-xs font-bold text-slate-500 animate-pulse">Initializing Razorpay checkout...</p>
           </div>
         ) : (
           <div className="space-y-3">
             <button
-              onClick={handlePaymentSuccess}
-              disabled={!tempOrderId}
-              className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-100 disabled:text-slate-400 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-md transition-colors cursor-pointer"
+              onClick={handlePayment}
+              className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-md transition-colors cursor-pointer"
             >
               <ShieldCheck className="w-4 h-4" />
-              {isSimulationMode ? 'Complete Mock Payment' : 'Complete Razorpay Payment'}
+              {isSimulationMode ? 'Simulation Disabled' : 'Pay with Razorpay'}
             </button>
             <button
               onClick={handlePaymentDecline}

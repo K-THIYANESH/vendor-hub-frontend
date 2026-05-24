@@ -30,7 +30,6 @@ export const Checkout = () => {
     }
 
     if (paymentMethod === 'RAZORPAY') {
-      // Redirect to simulated Razorpay checkout gateway
       navigate(`/razorpay-payment?amount=${total}&address=${encodeURIComponent(address)}`);
       return;
     }
@@ -107,7 +106,7 @@ export const Checkout = () => {
                 <span className="text-[10px] text-slate-500">Pay cash directly when order reaches doorstep.</span>
               </div>
 
-              {/* Online payment mock */}
+              {/* Online payment */}
               <div
                 onClick={() => setPaymentMethod('RAZORPAY')}
                 className={`p-4 rounded-2xl border cursor-pointer flex flex-col gap-1 relative overflow-hidden transition-all duration-200 ${
@@ -122,7 +121,7 @@ export const Checkout = () => {
                     <Sparkles className="w-2.5 h-2.5" /> Instant
                   </span>
                 </span>
-                <span className="text-[10px] text-slate-500">Complete digital mock transaction checkout instantly.</span>
+                <span className="text-[10px] text-slate-500">Complete a real Razorpay checkout and verify the payment securely on the backend.</span>
               </div>
             </div>
           </div>
